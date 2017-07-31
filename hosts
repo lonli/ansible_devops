@@ -1,0 +1,6 @@
+[zabbix-agent]
+localhost
+
+[zabbix-server]
+localhost
+

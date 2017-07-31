@@ -1,0 +1,72 @@
+---
+- name : add zabbix 3.0 server
+  hosts : zabbix-server
+  become : yes
+  vars :
+    mysql_root_pass : XXXX
+    apt_repo : 'http://repo.zabbix.com/zabbix/3.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_3.0-1+xenial_all.deb'
+    apt_repo_deb : 'zabbix-release_3.0-1+xenial_all.deb'
+    db_name : zabbixdb
+    db_user : zabbix
+    db_pass : XXXX
+  tasks :
+    - name : set root password
+      debconf : name='mysql-server' question='mysql-server/root_password' value='{{ mysql_root_pass | quote }}' vtype='password'
+
+    - name : confirm root password
+      debconf : name='mysql-server' question='mysql-server/root_password_again' value='{{ mysql_root_pass | quote }}' vtype='password'
+
+    - name : add depended package
+      apt : name={{ item }} update_cache=yes
+      with_items :
+        - apache2
+        - mysql-server
+        - python-pip
+        - libmysqlclient-dev
+        - cython
+        - msmtp
+        - mutt
+        - php
+        - php-bcmath
+        - php-mbstring
+        - php-xmlwriter
+        - php-xmlreader
+
+    - name : get apt repository
+      get_url : url={{ apt_repo }} dest=/tmp/{{ apt_repo_deb }}
+
+    - name : add apt repository
+      command : dpkg -i {{ apt_repo_deb }}
+      args :
+        chdir : /tmp
+
+    - name : add zabbix-server
+      apt : name={{ item }} update_cache=yes
+      with_items :
+        - zabbix-server-mysql
+        - zabbix-frontend-php
+        - zabbix-get
+
+    - name : install python mysql module
+      pip : name=MySQL-python
+
+    - name : create database
+      mysql_db : encoding=utf8 login_user=root login_password={{ mysql_root_pass }} name={{ db_name }}
+
+    - name : create user
+      mysql_user : name={{ db_user }} password={{ db_pass }} priv='{{ db_name }}.*:all' login_user=root login_password={{ mysql_root_pass }}
+
+    - name : import tables
+      shell : zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -u{{ db_user }} -p{{ db_pass }} {{ db_name }}
+
+    - name : modify zabbix configuration file
+      template : src=file/zabbix_server.conf.j2 dest=/etc/zabbix/zabbix_server.conf
+
+    - name : modify php.ini configuration file
+      copy : src=file/php7.ini dest=/etc/php/7.0/apache2/php.ini
+
+    - name : restart apache2 and zabbix-server
+      service : name={{ item }} state=restarted
+      with_items :
+        - zabbix-server
+        - apache2
